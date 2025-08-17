@@ -30,7 +30,7 @@ def sudoku_loss(model, hidden_states, board_inputs, board_targets, segments, key
     qact_halt_target = output_accuracy
 
     next_segments = segments + 1
-    is_last_segment = next_segments > model.config.act.haltMaxSteps
+    is_last_segment = next_segments > model.config.act.halt_max_steps
     is_halted = is_last_segment | (output.qACTHalt > output.qACTContinue)
 
     # Exploration
@@ -39,7 +39,7 @@ def sudoku_loss(model, hidden_states, board_inputs, board_targets, segments, key
     min_halt_segments = (
         torch.randint(
             low=2,
-            high=model.config.act.haltMaxSteps + 1,
+            high=model.config.act.halt_max_steps + 1,
             size=segments.shape,
         ) * halt_exploration.int()
     )
