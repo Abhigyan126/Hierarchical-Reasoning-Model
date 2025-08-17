@@ -31,10 +31,10 @@ def sudoku_loss(model, hidden_states, board_inputs, board_targets, segments, key
 
     next_segments = segments + 1
     is_last_segment = next_segments > model.config.act.halt_max_steps
-    is_halted = is_last_segment | (output.qACTHalt > output.qACTContinue)
+    is_halted = is_last_segment | (output.qact_halt > output.qACTContinue)
 
     # Exploration
-    halt_exploration = (torch.rand_like(output.qACTHalt) <
+    halt_exploration = (torch.rand_like(output.qact_halt) <
                         model.config.act.haltExplorationProbability)
     min_halt_segments = (
         torch.randint(
@@ -47,7 +47,7 @@ def sudoku_loss(model, hidden_states, board_inputs, board_targets, segments, key
 
     # Next step (stop_gradient equivalent = detach)
     next_output = model(hidden_states=output.hiddenStates, inputs=board_inputs)
-    next_qact_halt = next_output.qACTHalt.detach()
+    next_qact_halt = next_output.qact_halt.detach()
     next_qact_continue = next_output.qACTContinue.detach()
 
     qact_continue_target = torch.sigmoid(
@@ -60,7 +60,7 @@ def sudoku_loss(model, hidden_states, board_inputs, board_targets, segments, key
 
     qact_loss = (
         F.binary_cross_entropy_with_logits(
-            output.qACTHalt, qact_halt_target.float(), reduction="none"
+            output.qact_halt, qact_halt_target.float(), reduction="none"
         )
         + F.binary_cross_entropy_with_logits(
             output.qACTContinue, qact_continue_target, reduction="none"
@@ -75,7 +75,7 @@ def sudoku_loss(model, hidden_states, board_inputs, board_targets, segments, key
         .float()
         .mean()
     )
-    avg_qact_halt_accuracy = ((output.qACTHalt >= 0).int() == output_accuracy).float().mean()
+    avg_qact_halt_accuracy = ((output.qact_halt >= 0).int() == output_accuracy).float().mean()
 
     return [
         avg_output_loss + avg_qact_loss,
