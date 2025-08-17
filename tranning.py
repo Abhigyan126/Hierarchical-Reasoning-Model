@@ -110,7 +110,7 @@ class TrainingBatch:
                 low_level=self.initial_hidden_states.low_level.unsqueeze(0).unsqueeze(0).expand(size, -1, -1).clone(),
         )
         self.board_inputs = torch.zeros(size, 81, dtype=torch.int32)
-        self.board_targets = torch.zeros(size, 81, dtype=torch.int32)
+        self.board_targets = torch.zeros(size, 81, dtype=torch.long)
         self.segments = torch.zeros(size, dtype=torch.int32)
 
         self.curriculum_level = 0
@@ -144,7 +144,7 @@ class TrainingBatch:
         self.board_inputs[idx] = torch.tensor([x for row in puzzle for x in row],
                                               dtype=torch.int32)
         self.board_targets[idx] = torch.tensor([x for row in solution for x in row],
-                                               dtype=torch.int32)
+                                               dtype=torch.long)
 
         self.total_puzzles += 1
 
