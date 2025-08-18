@@ -46,7 +46,7 @@ def sudoku_loss(model, hidden_states, board_inputs, board_targets, segments, key
     is_halted = is_halted & (next_segments > min_halt_segments)
 
     # Next step (stop_gradient equivalent = detach)
-    next_output = model(hidden_states=output.hiddenStates, inputs=board_inputs)
+    next_output = model(hidden_states=output.hidden_states, inputs=board_inputs)
     next_qact_halt = next_output.qact_halt.detach()
     next_qact_continue = next_output.qact_continue.detach()
 
@@ -84,8 +84,8 @@ def sudoku_loss(model, hidden_states, board_inputs, board_targets, segments, key
         is_halted,
         avg_output_full_accuracy,
         avg_qact_halt_accuracy,
-        output.hiddenStates.highLevel,
-        output.hiddenStates.lowLevel,
+        output.hidden_states.highLevel,
+        output.hidden_states.lowLevel,
     ]
 
 
