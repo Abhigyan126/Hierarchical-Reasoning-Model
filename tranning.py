@@ -84,8 +84,8 @@ def sudoku_loss(model, hidden_states, board_inputs, board_targets, segments, key
         is_halted,
         avg_output_full_accuracy,
         avg_qact_halt_accuracy,
-        output.hidden_states.highLevel,
-        output.hidden_states.lowLevel,
+        output.hidden_states.high_level,
+        output.hidden_states.low_level,
     ]
 
 
