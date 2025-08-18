@@ -31,7 +31,7 @@ def sudoku_loss(model, hidden_states, board_inputs, board_targets, segments, key
 
     next_segments = segments + 1
     is_last_segment = next_segments > model.config.act.halt_max_steps
-    is_halted = is_last_segment | (output.qact_halt > output.qACTContinue)
+    is_halted = is_last_segment | (output.qact_halt > output.qact_continue)
 
     # Exploration
     halt_exploration = (torch.rand_like(output.qact_halt) <
@@ -48,7 +48,7 @@ def sudoku_loss(model, hidden_states, board_inputs, board_targets, segments, key
     # Next step (stop_gradient equivalent = detach)
     next_output = model(hidden_states=output.hiddenStates, inputs=board_inputs)
     next_qact_halt = next_output.qact_halt.detach()
-    next_qact_continue = next_output.qACTContinue.detach()
+    next_qact_continue = next_output.qact_continue.detach()
 
     qact_continue_target = torch.sigmoid(
         torch.where(
@@ -63,7 +63,7 @@ def sudoku_loss(model, hidden_states, board_inputs, board_targets, segments, key
             output.qact_halt, qact_halt_target.float(), reduction="none"
         )
         + F.binary_cross_entropy_with_logits(
-            output.qACTContinue, qact_continue_target, reduction="none"
+            output.qact_continue, qact_continue_target, reduction="none"
         )
     ) / 2
 
