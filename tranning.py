@@ -35,7 +35,7 @@ def sudoku_loss(model, hidden_states, board_inputs, board_targets, segments, key
 
     # Exploration
     halt_exploration = (torch.rand_like(output.qact_halt) <
-                        model.config.act.halt_exploration_probability)
+                        model.config.act.haltExplorationProbability)
     min_halt_segments = (
         torch.randint(
             low=2,
