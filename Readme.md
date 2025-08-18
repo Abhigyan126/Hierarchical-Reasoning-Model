@@ -1,7 +1,7 @@
 # Hierarchical Reasoning Model (HRM) — Sudoku
 
 This repository implements the **Hierarchical Reasoning Model (HRM)** from scratch in Python using PyTorch, applied to Sudoku as a reasoning task.
-
+> Note: The main branch contains implmementation that consumes a lots of memory, to run in envirnment with less than 22GB of ram use the branch with optimised implementation
 ## Overview
 
 The Hierarchical Reasoning Model is a new approach to structured reasoning in AI. Instead of handling problems in a flat, step-by-step way, HRM operates on multiple levels of abstraction. Higher levels capture strategic planning, while lower levels work out the fine details.  
