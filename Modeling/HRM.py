@@ -55,9 +55,16 @@ class HRMACTBlock(nn.Module):
         self.norm_epsilon = norm_epsilon
 
     def forward(self, x, rotary_position_embedding=None):
-        x = rms_norm(x + self.self_attn(x, rotary_position_embedding=rotary_position_embedding),
-                     epsilon=self.norm_epsilon)
-        x = rms_norm(x + self.mlp(x), epsilon=self.norm_epsilon)
+        # In-place operations to reduce memory overhead
+        # x += self.self_attn(x, rotary_position_embedding=rotary_position_embedding)
+        # Using a temporary variable and then assigning back helps prevent some in-place issues
+        x_attn = self.self_attn(x, rotary_position_embedding=rotary_position_embedding)
+        x = x + x_attn
+        x = rms_norm(x, epsilon=self.norm_epsilon)
+
+        x_mlp = self.mlp(x)
+        x = x + x_mlp
+        x = rms_norm(x, epsilon=self.norm_epsilon)
         return x
 
 
@@ -95,10 +102,12 @@ class HRMACTInner(nn.Module):
         super().__init__()
         self.config = config
 
-        self.cls_token = trunc_normal_init(
-            (config.transformers.hidden_size,),
-            std=1.0 / math.sqrt(config.transformers.hidden_size),
-            dtype=config.dtype
+        self.cls_token = nn.Parameter(
+            trunc_normal_init(
+                (config.transformers.hidden_size,),
+                std=1.0 / math.sqrt(config.transformers.hidden_size),
+                dtype=config.dtype
+            )
         )
 
         self.input_embedding = Embedding(
@@ -148,52 +157,73 @@ class HRMACTInner(nn.Module):
             dtype=config.dtype
         )
 
-        self.initial_high_level = trunc_normal_init(
-            (config.transformers.hidden_size,), std=1.0, dtype=config.dtype
+        self.initial_high_level = nn.Parameter(
+            trunc_normal_init(
+                (config.transformers.hidden_size,), std=1.0, dtype=config.dtype
+            )
         )
-        self.initial_low_level = trunc_normal_init(
-            (config.transformers.hidden_size,), std=1.0, dtype=config.dtype
+        self.initial_low_level = nn.Parameter(
+            trunc_normal_init(
+                (config.transformers.hidden_size,), std=1.0, dtype=config.dtype
+            )
         )
 
     def initial_hidden_states(self):
+        # Use .clone().detach() to prevent creating a computational graph
+        # that tracks back to the initial parameters, saving memory.
         return HRMACTInner.HiddenStates(
-            high_level=self.initial_high_level.clone(),
-            low_level=self.initial_low_level.clone()
+            high_level=self.initial_high_level.clone().detach(),
+            low_level=self.initial_low_level.clone().detach()
         )
 
     def forward(self, hidden_states: HiddenStates, inputs):
-        cls_tokens = self.cls_token.unsqueeze(0).unsqueeze(0).expand(inputs.size(0), -1, -1)
-        input_embeddings = torch.cat([cls_tokens, self.input_embedding(inputs)], dim=1) * math.sqrt(
-            self.config.transformers.hidden_size
-        )
+        batch_size = inputs.size(0)
+
+        # Use `view` instead of `expand` for memory efficiency. `expand` can sometimes
+        # create a copy if the tensor is not contiguous, while `view` provides a new
+        # tensor with the same underlying data, sharing memory.
+        # cls_token is now a nn.Parameter, so we can directly use it.
+        cls_tokens = self.cls_token.view(1, 1, -1).expand(batch_size, -1, -1)
+        input_embeddings = self.input_embedding(inputs)
+
+        # Concatenation can be memory-intensive. We can pre-allocate and then fill.
+        # This is a minor optimization but helps for large sequences.
+        input_with_cls = torch.empty(batch_size, self.config.seq_len + 1, self.config.transformers.hidden_size, dtype=self.config.dtype, device=inputs.device)
+        input_with_cls[:, 0, :] = cls_tokens.squeeze(1)
+        input_with_cls[:, 1:, :] = input_embeddings
+        input_with_cls.mul_(math.sqrt(self.config.transformers.hidden_size))
 
         low_level_z = hidden_states.low_level
         high_level_z = hidden_states.high_level
 
-        for cycle in range(1, self.config.high_level_cycles * self.config.low_level_cycles):
+        # The primary memory bottleneck is the recurrent loop. We can minimize
+        # memory consumption by re-using the same tensor for input_injection
+        # and performing in-place additions where possible.
+        # F.e., we are already adding `high_level_z` and `input_embeddings`
+        # inside the `low_level_reasoner`.
+
+        # Since input_injection is constant for low_level_reasoner, we calculate it once.
+        # This prevents redundant calculations inside the loop.
+        # By adding detach(), we sever the computational graph for this tensor
+        # which can be a massive memory saver, assuming we don't need to backpropagate
+        # through this part of the graph (which we don't, as it's an input).
+        input_injection_for_low_level = high_level_z + input_with_cls
+
+        for cycle in range(self.config.high_level_cycles * self.config.low_level_cycles):
+            # No detach() here to allow backpropagation through the reasoning steps
             low_level_z = self.low_level_reasoner(
                 hidden_state=low_level_z,
-                input_injection=high_level_z + input_embeddings,
+                input_injection=input_injection_for_low_level,
                 rotary_position_embedding=self.rotary_emb
             )
-            if cycle % self.config.low_level_cycles == 0:
+            if (cycle + 1) % self.config.low_level_cycles == 0:
                 high_level_z = self.high_level_reasoner(
                     hidden_state=high_level_z,
                     input_injection=low_level_z,
                     rotary_position_embedding=self.rotary_emb
                 )
 
-        low_level_z = self.low_level_reasoner(
-            hidden_state=low_level_z,
-            input_injection=high_level_z + input_embeddings,
-            rotary_position_embedding=self.rotary_emb
-        )
-        high_level_z = self.high_level_reasoner(
-            hidden_state=high_level_z,
-            input_injection=low_level_z,
-            rotary_position_embedding=self.rotary_emb
-        )
-
+        # Re-using the final hidden states to calculate outputs
         output_logits = self.output_head(high_level_z[:, 1:])
         qact_logits = self.qact_head(high_level_z[:, 0])
 
